@@ -4,14 +4,13 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 const WEB_URL = process.env.RENDER_EXTERNAL_URL;
-
-// Use provided JPG logo URL
 const LOGO_URL = 'https://files.catbox.moe/cbb551.jpg';
 
 // Auto-generate secrets if not in .env
@@ -37,10 +36,23 @@ app.use((req, res, next) => {
 bot.telegram.setWebhook(`${WEB_URL}/webhook`);
 app.use(bot.webhookCallback('/webhook'));
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Password Generator
-async function generatePassword(length = 16, options = {}) {
+// Website Routes
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/panel', (req, res) => {
+  if(req.query.token === process.env.PANEL_TOKEN) {
+    res.sendFile(path.join(__dirname, 'public', 'panel.html'));
+  } else {
+    res.status(403).send('Invalid access token');
+  }
+});
+
+// Password Generator with Progress
+async function generatePassword(length = 16, options = {}, ctx = null) {
   const chars = {
     upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     lower: 'abcdefghijklmnopqrstuvwxyz',
@@ -53,9 +65,41 @@ async function generatePassword(length = 16, options = {}) {
     if (options[key]) charSet += chars[key];
   });
 
-  return Array.from(crypto.randomBytes(length))
+  let progressMessage;
+  let updateInterval;
+  const startTime = Date.now();
+
+  if (ctx) {
+    progressMessage = await ctx.reply('🔒 Generating secure password...\n[░░░░░░░░░░] 0%');
+    
+    updateInterval = setInterval(async () => {
+      try {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(100, Math.floor((elapsed / 1500) * 100));
+        const bars = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
+        
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          progressMessage.message_id,
+          null,
+          `🔒 Generating secure password...\n[${bars}] ${progress}%`
+        );
+      } catch (error) {
+        clearInterval(updateInterval);
+      }
+    }, 500);
+  }
+
+  const password = Array.from(crypto.randomBytes(length))
     .map(byte => charSet[byte % charSet.length])
     .join('');
+
+  if (ctx) {
+    clearInterval(updateInterval);
+    await ctx.telegram.deleteMessage(ctx.chat.id, progressMessage.message_id);
+  }
+  
+  return password;
 }
 
 // JWT Handler
@@ -71,12 +115,13 @@ function handleJWT(payload, secret = process.env.JWT_SECRET) {
   }
 }
 
-// Telegram Commands with Image Fix
+// Telegram Commands
 bot.start(async (ctx) => {
   try {
     await ctx.replyWithPhoto(LOGO_URL, {
       caption: '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
-               '/generate - Password Generator\n' +
+               '/password - Generate password\n' +
+               '/generate - Web Password Generator\n' +
                '/panel - JWT Generator\n' +
                '/help - Show commands',
       parse_mode: 'Markdown',
@@ -90,33 +135,52 @@ bot.start(async (ctx) => {
     await ctx.replyWithMarkdown(
       `🔐 *SecureGenBot*\n\n` +
       `Access security tools:\n\n` +
-      `/generate - Password Generator\n` +
+      `/password - Generate password\n` +
+      `/generate - Web Password Generator\n` +
       `/panel - JWT Generator\n` +
       `/help - Show commands`
     );
   }
 });
 
+bot.command('password', async (ctx) => {
+  try {
+    const password = await generatePassword(16, {
+      upper: true,
+      lower: true,
+      numbers: true,
+      symbols: true
+    }, ctx);
+    
+    await ctx.reply(`🔑 Your secure password:\n\n<code>${password}</code>\n\n⚠️ Keep this secret!`, {
+      parse_mode: 'HTML'
+    });
+  } catch (error) {
+    await ctx.reply('❌ Error generating password');
+  }
+});
+
 bot.command('generate', async (ctx) => {
   const token = uuidv4();
-  ctx.reply(`🔑 Access Password Generator:\n${WEB_URL}/public?token=${token}`);
+  ctx.reply(`🔑 Access Web Password Generator:\n${WEB_URL}/?token=${token}`);
 });
 
 bot.command('panel', (ctx) => {
-  ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/public/panel?token=${process.env.PANEL_TOKEN}`);
+  ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/panel?token=${process.env.PANEL_TOKEN}`);
 });
 
 bot.command('help', (ctx) => {
   ctx.replyWithMarkdown(
     `*🤖 Command List*\n\n` +
     `/start - Show welcome message\n` +
-    `/generate - Password generator web interface\n` +
-    `/panel - JWT generator web interface\n` +
+    `/password - Generate password in chat\n` +
+    `/generate - Web password generator\n` +
+    `/panel - JWT generator\n` +
     `/help - Show this message`
   );
 });
 
-// Web Endpoints
+// API Endpoints
 app.post('/generate-password', async (req, res) => {
   try {
     const { length, options } = req.body;
