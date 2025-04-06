@@ -99,11 +99,11 @@ bot.start(async (ctx) => {
 
 bot.command('generate', async (ctx) => {
   const token = uuidv4();
-  ctx.reply(`🔑 Access Password Generator:\n${WEB_URL}/?token=${token}`);
+  ctx.reply(`🔑 Access Password Generator:\n${WEB_URL}/public?token=${token}`);
 });
 
 bot.command('panel', (ctx) => {
-  ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/panel?token=${process.env.PANEL_TOKEN}`);
+  ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/public/panel?token=${process.env.PANEL_TOKEN}`);
 });
 
 bot.command('help', (ctx) => {
