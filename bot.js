@@ -19,7 +19,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toStri
 process.env.PANEL_TOKEN = process.env.PANEL_TOKEN || crypto.randomBytes(16).toString('hex');
 
 // Serve static files with cache
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1d' });
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
 
 // Middleware
 app.use(express.json());
@@ -62,10 +62,10 @@ function generatePassword(length = 16, options = {}) {
 function handleJWT(payload, secret = process.env.JWT_SECRET) {
   try {
     const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
-    return { 
+    return {
       token,
       decoded: jwt.decode(token),
-      verified: jwt.verify(token, secret)
+      verified: jwt.verify(token, secret),
     };
   } catch (error) {
     throw new Error(`JWT Error: ${error.message}`);
@@ -156,7 +156,12 @@ bot.command('password', async (ctx) => {
   );
 });
 
+let waitingForJwt = false;
+let waitingForDecode = false;
+
 bot.command('jwt', async (ctx) => {
+  waitingForJwt = true;
+  waitingForDecode = false;
   await ctx.sendChatAction('typing');
   await ctx.replyWithMarkdown(
     '🔐 *JWT Generation*\n\n' +
@@ -164,50 +169,17 @@ bot.command('jwt', async (ctx) => {
     '`key1=value1, key2=value2`\n\n' +
     'Example: `user_id=123, role=admin`'
   );
-
-  bot.on('text', async (ctx) => {
-    if (ctx.message.text.includes('=')) {
-      await ctx.sendChatAction('typing');
-      try {
-        const claims = ctx.message.text
-          .split(', ')
-          .reduce((acc, pair) => {
-            const [key, value] = pair.split('=');
-            acc[key] = isNaN(value) ? value : Number(value);
-            return acc;
-          }, {});
-        const { token, decoded } = handleJWT(claims);
-        await ctx.replyWithMarkdown(
-          `🔐 JWT Token:\n\n\`\`\`\n${token}\n\`\`\`\n\n` +
-          `Decoded:\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
-        );
-      } catch (error) {
-        await ctx.reply(`❌ Error: ${error.message}`);
-      }
-    }
-  });
 });
 
 bot.command('decode', async (ctx) => {
+  waitingForDecode = true;
+  waitingForJwt = false;
   await ctx.sendChatAction('typing');
   await ctx.replyWithMarkdown(
     '🔍 Send JWT token to decode:\n' +
     'Optionally include secret after space\n' +
     'Example: `eyJhbG... your_secret_here`'
   );
-
-  bot.on('text', async (ctx) => {
-    await ctx.sendChatAction('typing');
-    try {
-      const [token, secret] = ctx.message.text.split(' ');
-      const decoded = secret ? jwt.verify(token, secret) : jwt.decode(token);
-      await ctx.replyWithMarkdown(
-        `🔍 Decoded JWT:\n\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
-      );
-    } catch (error) {
-      await ctx.reply(`❌ Decode Error: ${error.message}`);
-    }
-  });
 });
 
 bot.command('web', async (ctx) => {
@@ -230,6 +202,42 @@ bot.command('help', async (ctx) => {
     '/web - Web interfaces\n' +
     '/help - Show this message'
   );
+});
+
+// Global text handler
+bot.on('text', async (ctx) => {
+  if (waitingForJwt && ctx.message.text.includes('=')) {
+    try {
+      await ctx.sendChatAction('typing');
+      const claims = ctx.message.text
+        .split(', ')
+        .reduce((acc, pair) => {
+          const [key, value] = pair.split('=');
+          acc[key] = isNaN(value) ? value : Number(value);
+          return acc;
+        }, {});
+      const { token, decoded } = handleJWT(claims);
+      await ctx.replyWithMarkdown(
+        `🔐 JWT Token:\n\n\`\`\`\n${token}\n\`\`\`\n\n` +
+        `Decoded:\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
+      );
+      waitingForJwt = false;
+    } catch (error) {
+      await ctx.reply(`❌ Error: ${error.message}`);
+    }
+  } else if (waitingForDecode) {
+    try {
+      await ctx.sendChatAction('typing');
+      const [token, secret] = ctx.message.text.split(' ');
+      const decoded = secret ? jwt.verify(token, secret) : jwt.decode(token);
+      await ctx.replyWithMarkdown(
+        `🔍 Decoded JWT:\n\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
+      );
+      waitingForDecode = false;
+    } catch (error) {
+      await ctx.reply(`❌ Decode Error: ${error.message}`);
+    }
+  }
 });
 
 // Error handling
