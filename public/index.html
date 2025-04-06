@@ -1,77 +1,52 @@
-<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Generator</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <title>Password Generator</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        #loader {
-            display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-        }
-    </style>
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
     <div class="container">
-        <div id="loader"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
-        <header class="header">
-            <img src="logo.svg" alt="Secure Generator" class="logo">
-            <h1><i class="fas fa-shield-alt"></i> Secure Generator</h1>
-            <p class="text-muted">Military-grade password and token generation</p>
-        </header>
-
         <div class="card">
-            <h2><i class="fas fa-key"></i> Password Generator</h2>
+            <h1><i class="fas fa-key"></i> Password Generator</h1>
             <div class="form-group">
-                <label for="passLength"><i class="fas fa-ruler-vertical"></i> Length</label>
+                <label><i class="fas fa-ruler"></i> Length</label>
                 <input type="number" id="passLength" min="8" max="64" value="16">
             </div>
-
-            <div class="form-group">
-                <label><i class="fas fa-toggle-on"></i> Complexity</label>
-                <div class="options-grid">
-                    <label class="option-item">
-                        <input type="checkbox" id="uppercase" checked>
-                        <i class="fas fa-font"></i> A-Z
-                    </label>
-                    <label class="option-item">
-                        <input type="checkbox" id="lowercase" checked>
-                        <i class="fas fa-font"></i> a-z
-                    </label>
-                    <label class="option-item">
-                        <input type="checkbox" id="numbers" checked>
-                        <i class="fas fa-hashtag"></i> 0-9
-                    </label>
-                    <label class="option-item">
-                        <input type="checkbox" id="symbols" checked>
-                        <i class="fas fa-exclamation"></i> !@#
-                    </label>
-                </div>
+            <div class="options-grid">
+                <label class="option-item">
+                    <input type="checkbox" id="uppercase" checked>
+                    <i class="fas fa-text-height"></i> A-Z
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="lowercase" checked>
+                    <i class="fas fa-text-width"></i> a-z
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="numbers" checked>
+                    <i class="fas fa-hashtag"></i> 0-9
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="symbols" checked>
+                    <i class="fas fa-exclamation"></i> !@#
+                </label>
             </div>
-
             <button class="btn" onclick="generatePassword()">
                 <i class="fas fa-redo"></i> Generate
             </button>
-
             <div class="result-box" id="passwordResult" style="display: none;">
-                <span class="copy-btn" onclick="copyResult('passwordResult')">
+                <span class="copy-btn" onclick="copyPassword()">
                     <i class="fas fa-copy"></i>
                 </span>
                 <span id="passwordOutput"></span>
             </div>
         </div>
     </div>
-    <script src="/js/bot.js"></script>
+
     <script>
         async function generatePassword() {
-            document.getElementById('loader').style.display = 'block';
             const length = document.getElementById('passLength').value;
             const options = {
                 upper: document.getElementById('uppercase').checked,
@@ -86,19 +61,19 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ length, options })
                 });
+                
                 const data = await response.json();
                 document.getElementById('passwordOutput').textContent = data.password;
                 document.getElementById('passwordResult').style.display = 'block';
             } catch (error) {
                 alert('Error generating password');
-            } finally {
-                document.getElementById('loader').style.display = 'none';
             }
         }
 
-        function copyResult(elementId) {
-            const text = document.getElementById(elementId).querySelector('span').textContent;
+        function copyPassword() {
+            const text = document.getElementById('passwordOutput').textContent;
             navigator.clipboard.writeText(text);
+            alert('Password copied to clipboard!');
         }
     </script>
 </body>
