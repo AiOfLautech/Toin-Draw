@@ -12,11 +12,11 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 const WEB_URL = process.env.RENDER_EXTERNAL_URL;
 
-// Auto-generate secrets if not in .env
+// Auto-generate secure secrets if not in .env
 process.env.JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.PANEL_TOKEN = process.env.PANEL_TOKEN || crypto.randomBytes(16).toString('hex');
 
-// Progress bar instance
+// Initialize progress bar
 const progressBar = new progress.Bar({
     format: 'Progress |{bar}| {percentage}%',
     barCompleteChar: '\u2588',
@@ -59,21 +59,26 @@ async function generatePassword(length = 16, options = {}, ctx) {
     if (options[key]) charSet += chars[key];
   });
 
-  // Show progress
   let progressMessage = await ctx.reply('🔒 Generating secure password...\n[░░░░░░░░░░] 0%');
+  const startTime = Date.now();
   
   const updateInterval = setInterval(async () => {
-    const progress = Math.min(100, Math.floor((Date.now() - startTime) / 150));
-    const bars = '█'.repeat(progress / 10) + '░'.repeat(10 - (progress / 10));
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      progressMessage.message_id,
-      null,
-      `🔒 Generating secure password...\n[${bars}] ${progress}%`
-    );
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(100, Math.floor((elapsed / 1500) * 100));
+    const bars = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
+    
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        progressMessage.message_id,
+        null,
+        `🔒 Generating secure password...\n[${bars}] ${progress}%`
+      );
+    } catch (error) {
+      clearInterval(updateInterval);
+    }
   }, 500);
 
-  const startTime = Date.now();
   const password = Array.from(crypto.randomBytes(length))
     .map(byte => charSet[byte % charSet.length])
     .join('');
@@ -83,15 +88,16 @@ async function generatePassword(length = 16, options = {}, ctx) {
   return password;
 }
 
-// JWT Handler
+// Fixed JWT Handler
 function handleJWT(payload, secret = process.env.JWT_SECRET) {
   try {
+    const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
     return {
-      token: jwt.sign(payload, secret, { algorithm: 'HS256' }),
-      decoded: jwt.verify(payload, secret)
+      token,
+      decoded: jwt.decode(token)
     };
   } catch (error) {
-    throw new Error('Invalid JWT configuration');
+    throw new Error(`JWT Error: ${error.message}`);
   }
 }
 
@@ -120,7 +126,6 @@ bot.command('generate', async (ctx) => {
 });
 
 bot.command('panel', (ctx) => {
-  const token = uuidv4();
   ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/panel?token=${process.env.PANEL_TOKEN}`);
 });
 
@@ -142,7 +147,7 @@ app.post('/generate-password', async (req, res) => {
     const password = await generatePassword(length, options);
     res.json({ password });
   } catch (error) {
-    res.status(400).json({ error: 'Invalid request' });
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -161,12 +166,17 @@ app.use((err, req, res, next) => {
   res.status(500).send('⚠️ Server Error - Contact Support');
 });
 
-// Server Start
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at ${WEB_URL}`);
-  console.log(`🔑 JWT_SECRET: ${process.env.JWT_SECRET}`);
-  console.log(`🔐 PANEL_TOKEN: ${process.env.PANEL_TOKEN}`);
-  console.log(`🤖 Bot @${bot.context.botInfo.username} active`);
+// Initialize bot and start server
+bot.telegram.getMe().then((botInfo) => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at ${WEB_URL}`);
+    console.log(`🔑 JWT_SECRET: ${process.env.JWT_SECRET}`);
+    console.log(`🔐 PANEL_TOKEN: ${process.env.PANEL_TOKEN}`);
+    console.log(`🤖 Bot @${botInfo.username} active`);
+  });
+}).catch((error) => {
+  console.error('Bot initialization failed:', error);
+  process.exit(1);
 });
 
 module.exports = app;
