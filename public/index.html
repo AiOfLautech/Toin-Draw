@@ -1,3 +1,4 @@
+<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,11 +8,19 @@
     <link rel="stylesheet" href="/css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-           
+        #loader {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div id="loader"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
         <header class="header">
             <img src="logo.svg" alt="Secure Generator" class="logo">
             <h1><i class="fas fa-shield-alt"></i> Secure Generator</h1>
@@ -59,9 +68,10 @@
             </div>
         </div>
     </div>
-<script src="/js/bot.js"></script>
+    <script src="/js/bot.js"></script>
     <script>
         async function generatePassword() {
+            document.getElementById('loader').style.display = 'block';
             const length = document.getElementById('passLength').value;
             const options = {
                 upper: document.getElementById('uppercase').checked,
@@ -76,12 +86,13 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ length, options })
                 });
-                
                 const data = await response.json();
                 document.getElementById('passwordOutput').textContent = data.password;
                 document.getElementById('passwordResult').style.display = 'block';
             } catch (error) {
                 alert('Error generating password');
+            } finally {
+                document.getElementById('loader').style.display = 'none';
             }
         }
 
