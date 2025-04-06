@@ -1,154 +1,84 @@
-<!-- public/panel.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Panel</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <title>JWT Generator</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        #loader {
-            display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-        }
-    </style>
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
     <div class="container">
-        <div id="loader"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
         <div class="card">
-            <h1><i class="fas fa-lock"></i> Secure Panel</h1>
-            <p class="text-muted">Session ID: <span id="sessionId"></span></p>
-
-            <div class="jwt-generator">
-                <h2><i class="fas fa-fingerprint"></i> JWT Generator</h2>
-                
-                <div class="form-group">
-                    <label><i class="fas fa-key"></i> Secret Key</label>
-                    <input type="text" id="jwtSecret" placeholder="Enter secret key (optional)">
+            <h1><i class="fas fa-fingerprint"></i> JWT Generator</h1>
+            <div id="claimsContainer">
+                <div class="claim-row">
+                    <input type="text" placeholder="Claim key" class="claim-key">
+                    <input type="text" placeholder="Claim value" class="claim-value">
                 </div>
-
-                <div class="claims-form">
-                    <div class="form-group">
-                        <label><i class="fas fa-tags"></i> Claims</label>
-                        <div id="claimsContainer">
-                            <div class="claim-row">
-                                <input type="text" class="claim-input" placeholder="Claim key (e.g., 'user_id')">
-                                <input type="text" class="claim-input" placeholder="Claim value">
-                                <button class="remove-claim" onclick="removeClaim(this)"><i class="fas fa-times"></i></button>
-                            </div>
-                        </div>
-                        <button class="add-claim" onclick="addClaim()"><i class="fas fa-plus"></i> Add Claim</button>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label><i class="fas fa-clock"></i> Expiration</label>
-                    <div class="options-grid">
-                        <label class="option-item">
-                            <input type="checkbox" id="addExpiration" checked>
-                            Add 1 hour expiration
-                        </label>
-                    </div>
-                </div>
-
-                <button class="btn" onclick="generateJWT()">
-                    <i class="fas fa-redo"></i> Generate Token
-                </button>
-
-                <div class="result-box" id="jwtResult" style="display: none;">
-                    <span class="copy-btn" onclick="copyResult('jwtResult')">
-                        <i class="fas fa-copy"></i>
-                    </span>
-                    <pre id="jwtOutput"></pre>
-                </div>
-
-                <div class="token-info" id="tokenInfo" style="display: none;">
-                    <h3><i class="fas fa-info-circle"></i> Token Details</h3>
-                    <table class="claims-table">
-                        <thead>
-                            <tr>
-                                <th><i class="fas fa-tag"></i> Claim</th>
-                                <th><i class="fas fa-code"></i> Value</th>
-                            </tr>
-                        </thead>
-                        <tbody id="claimsBody"></tbody>
-                    </table>
-                </div>
+            </div>
+            <button class="btn" onclick="addClaim()">
+                <i class="fas fa-plus"></i> Add Claim
+            </button>
+            <button class="btn" onclick="generateJWT()">
+                <i class="fas fa-redo"></i> Generate JWT
+            </button>
+            <div class="result-box" id="jwtResult" style="display: none;">
+                <span class="copy-btn" onclick="copyJWT()">
+                    <i class="fas fa-copy"></i>
+                </span>
+                <pre id="jwtOutput"></pre>
+            </div>
+            <div class="token-info" id="tokenInfo" style="display: none;">
+                <h3><i class="fas fa-info-circle"></i> Decoded Token</h3>
+                <pre id="decodedOutput"></pre>
             </div>
         </div>
     </div>
-    <script src="/js/bot.js"></script>
-    <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        document.getElementById('sessionId').textContent = urlParams.get('token');
 
+    <script>
         function addClaim() {
             const newRow = document.createElement('div');
             newRow.className = 'claim-row';
             newRow.innerHTML = `
-                <input type="text" class="claim-input" placeholder="Claim key">
-                <input type="text" class="claim-input" placeholder="Claim value">
-                <button class="remove-claim" onclick="removeClaim(this)"><i class="fas fa-times"></i></button>
+                <input type="text" placeholder="Claim key" class="claim-key">
+                <input type="text" placeholder="Claim value" class="claim-value">
             `;
             document.getElementById('claimsContainer').appendChild(newRow);
         }
 
-        function removeClaim(button) {
-            if (document.querySelectorAll('.claim-row').length > 1) {
-                button.parentElement.remove();
-            }
-        }
-
         async function generateJWT() {
-            document.getElementById('loader').style.display = 'block';
-            document.getElementById('jwtResult').style.display = 'none';
-            document.getElementById('tokenInfo').style.display = 'none';
-            try {
-                const payload = {};
-                document.querySelectorAll('.claim-row').forEach(row => {
-                    const key = row.children[0].value.trim();
-                    const value = row.children[1].value.trim();
-                    if (key && value) {
-                        payload[key] = value.toLowerCase() === 'true' ? true
-                                        : value.toLowerCase() === 'false' ? false
-                                        : isNaN(value) ? value
-                                        : Number(value);
-                    }
-                });
-                if (document.getElementById('addExpiration').checked) {
-                    payload.exp = Math.floor(Date.now() / 1000) + 3600;
+            const claims = {};
+            document.querySelectorAll('.claim-row').forEach(row => {
+                const key = row.querySelector('.claim-key').value;
+                const value = row.querySelector('.claim-value').value;
+                if (key && value) {
+                    claims[key] = isNaN(value) ? value : Number(value);
                 }
-                const secret = document.getElementById('jwtSecret').value || undefined;
+            });
+
+            try {
                 const response = await fetch('/generate-jwt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ payload, secret })
+                    body: JSON.stringify({ payload: claims })
                 });
+
                 const data = await response.json();
                 document.getElementById('jwtOutput').textContent = data.token;
+                document.getElementById('decodedOutput').textContent = 
+                    JSON.stringify(data.decoded, null, 2);
                 document.getElementById('jwtResult').style.display = 'block';
-
-                const claimsBody = document.getElementById('claimsBody');
-                claimsBody.innerHTML = Object.entries(data.decoded).map(([k,v]) => `
-                    <tr><td>${k}</td><td>${typeof v==='object'?JSON.stringify(v):v}</td></tr>
-                `).join('');
                 document.getElementById('tokenInfo').style.display = 'block';
-            } catch (err) {
-                alert('Error generating token: ' + err.message);
-            } finally {
-                document.getElementById('loader').style.display = 'none';
+            } catch (error) {
+                alert('Error generating JWT: ' + error.message);
             }
         }
 
-        function copyResult(elementId) {
-            const text = document.getElementById(elementId).querySelector('pre').textContent;
+        function copyJWT() {
+            const text = document.getElementById('jwtOutput').textContent;
             navigator.clipboard.writeText(text);
+            alert('JWT copied to clipboard!');
         }
     </script>
 </body>
