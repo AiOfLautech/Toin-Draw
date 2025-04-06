@@ -104,7 +104,7 @@ function handleJWT(payload, secret = process.env.JWT_SECRET) {
 // Telegram Commands
 bot.start((ctx) => {
   ctx.replyWithPhoto(
-    { url: `${WEB_URL}/logo.svg` },
+    { url: `${WEB_URL}/logo.png` },
     {
       caption: '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
                '/generate - Password Generator\n' +
