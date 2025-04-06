@@ -1,4 +1,3 @@
-// server.js
 const { Telegraf } = require('telegraf');
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -9,45 +8,40 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-app.set('trust proxy', true); // trust X-Forwarded-For for rate limiting
+app.set('trust proxy', true);
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 const WEB_URL = process.env.RENDER_EXTERNAL_URL;
 const LOGO_URL = 'https://files.catbox.moe/cbb551.jpg';
 
-// Auto‐generate secrets if not in .env
 process.env.JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.PANEL_TOKEN = process.env.PANEL_TOKEN || crypto.randomBytes(16).toString('hex');
 
-// 1. Serve static assets from /public
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
+// Serve static files with cache
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1d' });
 
-// 2. Body parsers
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// 3. Rate limiting
-const limiter = rateLimit({
+app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-});
-app.use(limiter);
+}));
 
-// 4. Security headers
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'");
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 });
 
-// 5. Telegram webhook
+// Webhook setup
 bot.telegram.setWebhook(`${WEB_URL}/webhook`);
 app.use(bot.webhookCallback('/webhook'));
 
-// Password generator helper
+// Password generation
 function generatePassword(length = 16, options = {}) {
   const chars = {
     upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
@@ -64,17 +58,21 @@ function generatePassword(length = 16, options = {}) {
     .join('');
 }
 
-// JWT helper
+// JWT handling
 function handleJWT(payload, secret = process.env.JWT_SECRET) {
   try {
     const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
-    return { token, decoded: jwt.decode(token) };
+    return { 
+      token,
+      decoded: jwt.decode(token),
+      verified: jwt.verify(token, secret)
+    };
   } catch (error) {
     throw new Error(`JWT Error: ${error.message}`);
   }
 }
 
-// Web routes
+// Website routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -108,27 +106,38 @@ app.post('/generate-jwt', (req, res) => {
   }
 });
 
+app.post('/decode-jwt', (req, res) => {
+  try {
+    const { token, secret } = req.body;
+    const decoded = secret ? jwt.verify(token, secret) : jwt.decode(token);
+    res.json({ decoded });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Telegram commands
 bot.start(async (ctx) => {
   await ctx.sendChatAction('typing');
   try {
     await ctx.replyWithPhoto(LOGO_URL, {
-      caption:
-        '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
-        '/password - Generate password\n' +
-        '/jwt - Generate JWT\n' +
-        '/web - Web interfaces\n' +
-        '/help - Show commands',
+      caption: '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
+               '/password - Generate password\n' +
+               '/jwt - Generate JWT\n' +
+               '/decode - Decode JWT\n' +
+               '/web - Web interfaces\n' +
+               '/help - Show commands',
       parse_mode: 'Markdown',
     });
   } catch {
     await ctx.replyWithMarkdown(
       '🔐 *SecureGenBot*\n\n' +
-        'Access security tools:\n\n' +
-        '/password - Generate password\n' +
-        '/jwt - Generate JWT\n' +
-        '/web - Web interfaces\n' +
-        '/help - Show commands'
+      'Access security tools:\n\n' +
+      '/password - Generate password\n' +
+      '/jwt - Generate JWT\n' +
+      '/decode - Decode JWT\n' +
+      '/web - Web interfaces\n' +
+      '/help - Show commands'
     );
   }
 });
@@ -151,9 +160,9 @@ bot.command('jwt', async (ctx) => {
   await ctx.sendChatAction('typing');
   await ctx.replyWithMarkdown(
     '🔐 *JWT Generation*\n\n' +
-      'Send claims in format:\n' +
-      '`key1=value1, key2=value2`\n\n' +
-      'Example: `user_id=123, role=admin`'
+    'Send claims in format:\n' +
+    '`key1=value1, key2=value2`\n\n' +
+    'Example: `user_id=123, role=admin`'
   );
 
   bot.on('text', async (ctx) => {
@@ -167,10 +176,10 @@ bot.command('jwt', async (ctx) => {
             acc[key] = isNaN(value) ? value : Number(value);
             return acc;
           }, {});
-        const { token } = handleJWT(claims);
-        await ctx.reply(
-          `🔐 JWT Token:\n\n<code>${token}</code>`,
-          { parse_mode: 'HTML' }
+        const { token, decoded } = handleJWT(claims);
+        await ctx.replyWithMarkdown(
+          `🔐 JWT Token:\n\n\`\`\`\n${token}\n\`\`\`\n\n` +
+          `Decoded:\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
         );
       } catch (error) {
         await ctx.reply(`❌ Error: ${error.message}`);
@@ -179,12 +188,34 @@ bot.command('jwt', async (ctx) => {
   });
 });
 
+bot.command('decode', async (ctx) => {
+  await ctx.sendChatAction('typing');
+  await ctx.replyWithMarkdown(
+    '🔍 Send JWT token to decode:\n' +
+    'Optionally include secret after space\n' +
+    'Example: `eyJhbG... your_secret_here`'
+  );
+
+  bot.on('text', async (ctx) => {
+    await ctx.sendChatAction('typing');
+    try {
+      const [token, secret] = ctx.message.text.split(' ');
+      const decoded = secret ? jwt.verify(token, secret) : jwt.decode(token);
+      await ctx.replyWithMarkdown(
+        `🔍 Decoded JWT:\n\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
+      );
+    } catch (error) {
+      await ctx.reply(`❌ Decode Error: ${error.message}`);
+    }
+  });
+});
+
 bot.command('web', async (ctx) => {
   await ctx.sendChatAction('typing');
   ctx.replyWithMarkdown(
     '🌐 *Web Interfaces*\n\n' +
-      `[Password Generator](${WEB_URL}/?access=${uuidv4()})\n` +
-      `[JWT Generator](${WEB_URL}/panel?token=${process.env.PANEL_TOKEN})`
+    `[Password Generator](${WEB_URL}/?access=${uuidv4()})\n` +
+    `[JWT Generator](${WEB_URL}/panel?token=${process.env.PANEL_TOKEN})`
   );
 });
 
@@ -192,23 +223,23 @@ bot.command('help', async (ctx) => {
   await ctx.sendChatAction('typing');
   ctx.replyWithMarkdown(
     '*🤖 Command List*\n\n' +
-      '/start - Show welcome message\n' +
-      '/password - Generate password\n' +
-      '/jwt - Generate JWT\n' +
-      '/web - Web interfaces\n' +
-      '/help - Show this message'
+    '/start - Show welcome message\n' +
+    '/password - Generate password\n' +
+    '/jwt - Generate JWT\n' +
+    '/decode - Decode JWT\n' +
+    '/web - Web interfaces\n' +
+    '/help - Show this message'
   );
 });
 
-// Error handler
+// Error handling
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('⚠️ Server Error - Contact Support');
 });
 
-// Start server & bot
-bot.telegram
-  .getMe()
+// Initialize
+bot.telegram.getMe()
   .then((botInfo) => {
     app.listen(PORT, () => {
       console.log(`🚀 Server running at ${WEB_URL}`);
