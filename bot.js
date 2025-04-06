@@ -51,8 +51,32 @@ app.get('/panel', (req, res) => {
   }
 });
 
-// Password Generator with Progress
-async function generatePassword(length = 16, options = {}, ctx = null) {
+async function showProgress(ctx, title) {
+  const message = await ctx.reply(`${title}\n[░░░░░░░░░░] 0%`);
+  const startTime = Date.now();
+  
+  const interval = setInterval(async () => {
+    try {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(100, Math.floor((elapsed / 1500) * 100));
+      const bars = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
+      
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        message.message_id,
+        null,
+        `${title}\n[${bars}] ${progress}%`
+      );
+    } catch (error) {
+      clearInterval(interval);
+    }
+  }, 500);
+
+  return { message, interval };
+}
+
+// Password Generator
+async function generatePassword(length = 16, options = {}) {
   const chars = {
     upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     lower: 'abcdefghijklmnopqrstuvwxyz',
@@ -65,45 +89,13 @@ async function generatePassword(length = 16, options = {}, ctx = null) {
     if (options[key]) charSet += chars[key];
   });
 
-  let progressMessage;
-  let updateInterval;
-  const startTime = Date.now();
-
-  if (ctx) {
-    progressMessage = await ctx.reply('🔒 Generating secure password...\n[░░░░░░░░░░] 0%');
-    
-    updateInterval = setInterval(async () => {
-      try {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(100, Math.floor((elapsed / 1500) * 100));
-        const bars = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
-        
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          progressMessage.message_id,
-          null,
-          `🔒 Generating secure password...\n[${bars}] ${progress}%`
-        );
-      } catch (error) {
-        clearInterval(updateInterval);
-      }
-    }, 500);
-  }
-
-  const password = Array.from(crypto.randomBytes(length))
+  return Array.from(crypto.randomBytes(length))
     .map(byte => charSet[byte % charSet.length])
     .join('');
-
-  if (ctx) {
-    clearInterval(updateInterval);
-    await ctx.telegram.deleteMessage(ctx.chat.id, progressMessage.message_id);
-  }
-  
-  return password;
 }
 
-// JWT Handler
-function handleJWT(payload, secret = process.env.JWT_SECRET) {
+// JWT Generator
+function generateJWT(payload, secret = process.env.JWT_SECRET) {
   try {
     const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
     return {
@@ -121,8 +113,7 @@ bot.start(async (ctx) => {
     await ctx.replyWithPhoto(LOGO_URL, {
       caption: '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
                '/password - Generate password\n' +
-               '/generate - Web Password Generator\n' +
-               '/panel - JWT Generator\n' +
+               '/jwt - Generate JWT\n' +
                '/help - Show commands',
       parse_mode: 'Markdown',
       reply_markup: {
@@ -136,8 +127,7 @@ bot.start(async (ctx) => {
       `🔐 *SecureGenBot*\n\n` +
       `Access security tools:\n\n` +
       `/password - Generate password\n` +
-      `/generate - Web Password Generator\n` +
-      `/panel - JWT Generator\n` +
+      `/jwt - Generate JWT\n` +
       `/help - Show commands`
     );
   }
@@ -145,13 +135,16 @@ bot.start(async (ctx) => {
 
 bot.command('password', async (ctx) => {
   try {
+    const { message, interval } = await showProgress(ctx, '🔒 Generating password...');
     const password = await generatePassword(16, {
       upper: true,
       lower: true,
       numbers: true,
       symbols: true
-    }, ctx);
+    });
     
+    clearInterval(interval);
+    await ctx.telegram.deleteMessage(ctx.chat.id, message.message_id);
     await ctx.reply(`🔑 Your secure password:\n\n<code>${password}</code>\n\n⚠️ Keep this secret!`, {
       parse_mode: 'HTML'
     });
@@ -160,22 +153,35 @@ bot.command('password', async (ctx) => {
   }
 });
 
-bot.command('generate', async (ctx) => {
-  const token = uuidv4();
-  ctx.reply(`🔑 Access Web Password Generator:\n${WEB_URL}/?token=${token}`);
-});
-
-bot.command('panel', (ctx) => {
-  ctx.reply(`🔒 Access JWT Generator:\n${WEB_URL}/panel?token=${process.env.PANEL_TOKEN}`);
+bot.command('jwt', async (ctx) => {
+  try {
+    const { message, interval } = await showProgress(ctx, '🔐 Generating JWT...');
+    const payload = {
+      userId: crypto.randomBytes(8).toString('hex'),
+      timestamp: Date.now(),
+      exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour
+    };
+    
+    const { token, decoded } = generateJWT(payload);
+    
+    clearInterval(interval);
+    await ctx.telegram.deleteMessage(ctx.chat.id, message.message_id);
+    await ctx.replyWithMarkdown(
+      `🔐 *JWT Token*\n\n` +
+      `\`\`\`\n${token}\n\`\`\`\n\n` +
+      `*Decoded:*\n\`\`\`json\n${JSON.stringify(decoded, null, 2)}\n\`\`\``
+    );
+  } catch (error) {
+    await ctx.reply(`❌ JWT Error: ${error.message}`);
+  }
 });
 
 bot.command('help', (ctx) => {
   ctx.replyWithMarkdown(
     `*🤖 Command List*\n\n` +
     `/start - Show welcome message\n` +
-    `/password - Generate password in chat\n` +
-    `/generate - Web password generator\n` +
-    `/panel - JWT generator\n` +
+    `/password - Generate secure password\n` +
+    `/jwt - Generate JWT token\n` +
     `/help - Show this message`
   );
 });
@@ -194,7 +200,7 @@ app.post('/generate-password', async (req, res) => {
 
 app.post('/generate-jwt', (req, res) => {
   try {
-    const result = handleJWT(req.body.payload, req.body.secret);
+    const result = generateJWT(req.body.payload, req.body.secret);
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
