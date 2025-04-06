@@ -1,3 +1,4 @@
+<!-- public/panel.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,12 +8,19 @@
     <link rel="stylesheet" href="/css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Inherits all base styles from index.html */
-        
+        #loader {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div id="loader"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
         <div class="card">
             <h1><i class="fas fa-lock"></i> Secure Panel</h1>
             <p class="text-muted">Session ID: <span id="sessionId"></span></p>
@@ -75,9 +83,8 @@
             </div>
         </div>
     </div>
-<script src="/js/bot.js"></script>
+    <script src="/js/bot.js"></script>
     <script>
-        // Set session ID from URL
         const urlParams = new URLSearchParams(window.location.search);
         document.getElementById('sessionId').textContent = urlParams.get('token');
 
@@ -93,63 +100,49 @@
         }
 
         function removeClaim(button) {
-            if(document.querySelectorAll('.claim-row').length > 1) {
+            if (document.querySelectorAll('.claim-row').length > 1) {
                 button.parentElement.remove();
             }
         }
 
         async function generateJWT() {
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('jwtResult').style.display = 'none';
+            document.getElementById('tokenInfo').style.display = 'none';
             try {
-                // Build payload from form inputs
                 const payload = {};
-                const claimRows = document.querySelectorAll('.claim-row');
-                
-                claimRows.forEach(row => {
+                document.querySelectorAll('.claim-row').forEach(row => {
                     const key = row.children[0].value.trim();
                     const value = row.children[1].value.trim();
-                    if(key && value) {
-                        // Try to parse numbers and booleans
-                        payload[key] = isNaN(value) ? value : Number(value);
-                        if(value.toLowerCase() === 'true') payload[key] = true;
-                        if(value.toLowerCase() === 'false') payload[key] = false;
+                    if (key && value) {
+                        payload[key] = value.toLowerCase() === 'true' ? true
+                                        : value.toLowerCase() === 'false' ? false
+                                        : isNaN(value) ? value
+                                        : Number(value);
                     }
                 });
-
-                // Add expiration if enabled
-                if(document.getElementById('addExpiration').checked) {
-                    const expiresInHours = 1;
-                    payload.exp = Math.floor(Date.now() / 1000) + (expiresInHours * 3600);
+                if (document.getElementById('addExpiration').checked) {
+                    payload.exp = Math.floor(Date.now() / 1000) + 3600;
                 }
-
-                // Get secret key
                 const secret = document.getElementById('jwtSecret').value || undefined;
-
                 const response = await fetch('/generate-jwt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        payload,
-                        secret 
-                    })
+                    body: JSON.stringify({ payload, secret })
                 });
-
                 const data = await response.json();
                 document.getElementById('jwtOutput').textContent = data.token;
                 document.getElementById('jwtResult').style.display = 'block';
-                
-                // Show claims
-                const claims = data.decoded;
+
                 const claimsBody = document.getElementById('claimsBody');
-                claimsBody.innerHTML = Object.entries(claims).map(([key, value]) => `
-                    <tr>
-                        <td>${key}</td>
-                        <td>${typeof value === 'object' ? JSON.stringify(value) : value}</td>
-                    </tr>
+                claimsBody.innerHTML = Object.entries(data.decoded).map(([k,v]) => `
+                    <tr><td>${k}</td><td>${typeof v==='object'?JSON.stringify(v):v}</td></tr>
                 `).join('');
-                
                 document.getElementById('tokenInfo').style.display = 'block';
             } catch (err) {
                 alert('Error generating token: ' + err.message);
+            } finally {
+                document.getElementById('loader').style.display = 'none';
             }
         }
 
