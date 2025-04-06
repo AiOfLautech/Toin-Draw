@@ -4,7 +4,6 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const rateLimit = require('express-rate-limit');
-const progress = require('cli-progress');
 require('dotenv').config();
 
 const app = express();
@@ -12,17 +11,12 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 const WEB_URL = process.env.RENDER_EXTERNAL_URL;
 
-// Auto-generate secure secrets if not in .env
+// Use provided JPG logo URL
+const LOGO_URL = 'https://files.catbox.moe/cbb551.jpg';
+
+// Auto-generate secrets if not in .env
 process.env.JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 process.env.PANEL_TOKEN = process.env.PANEL_TOKEN || crypto.randomBytes(16).toString('hex');
-
-// Initialize progress bar
-const progressBar = new progress.Bar({
-    format: 'Progress |{bar}| {percentage}%',
-    barCompleteChar: '\u2588',
-    barIncompleteChar: '\u2591',
-    hideCursor: true
-});
 
 // Security Middleware
 const limiter = rateLimit({
@@ -45,8 +39,8 @@ app.use(bot.webhookCallback('/webhook'));
 app.use(express.json());
 app.use(express.static('public'));
 
-// Password Generator with Progress
-async function generatePassword(length = 16, options = {}, ctx) {
+// Password Generator
+async function generatePassword(length = 16, options = {}) {
   const chars = {
     upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     lower: 'abcdefghijklmnopqrstuvwxyz',
@@ -59,36 +53,12 @@ async function generatePassword(length = 16, options = {}, ctx) {
     if (options[key]) charSet += chars[key];
   });
 
-  let progressMessage = await ctx.reply('🔒 Generating secure password...\n[░░░░░░░░░░] 0%');
-  const startTime = Date.now();
-  
-  const updateInterval = setInterval(async () => {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(100, Math.floor((elapsed / 1500) * 100));
-    const bars = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
-    
-    try {
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        progressMessage.message_id,
-        null,
-        `🔒 Generating secure password...\n[${bars}] ${progress}%`
-      );
-    } catch (error) {
-      clearInterval(updateInterval);
-    }
-  }, 500);
-
-  const password = Array.from(crypto.randomBytes(length))
+  return Array.from(crypto.randomBytes(length))
     .map(byte => charSet[byte % charSet.length])
     .join('');
-
-  clearInterval(updateInterval);
-  await ctx.telegram.deleteMessage(ctx.chat.id, progressMessage.message_id);
-  return password;
 }
 
-// Fixed JWT Handler
+// JWT Handler
 function handleJWT(payload, secret = process.env.JWT_SECRET) {
   try {
     const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
@@ -101,11 +71,10 @@ function handleJWT(payload, secret = process.env.JWT_SECRET) {
   }
 }
 
-// Telegram Commands
-bot.start((ctx) => {
-  ctx.replyWithPhoto(
-    { url: `${WEB_URL}/logo.png` },
-    {
+// Telegram Commands with Image Fix
+bot.start(async (ctx) => {
+  try {
+    await ctx.replyWithPhoto(LOGO_URL, {
       caption: '🔐 *SecureGenBot*\nAccess security tools:\n\n' +
                '/generate - Password Generator\n' +
                '/panel - JWT Generator\n' +
@@ -116,8 +85,16 @@ bot.start((ctx) => {
           [{ text: '🌐 Web Access', url: WEB_URL }]
         ]
       }
-    }
-  );
+    });
+  } catch (error) {
+    await ctx.replyWithMarkdown(
+      `🔐 *SecureGenBot*\n\n` +
+      `Access security tools:\n\n` +
+      `/generate - Password Generator\n` +
+      `/panel - JWT Generator\n` +
+      `/help - Show commands`
+    );
+  }
 });
 
 bot.command('generate', async (ctx) => {
