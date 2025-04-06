@@ -9,6 +9,8 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', true); // trust X-Forwarded-For for rate limiting
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 const WEB_URL = process.env.RENDER_EXTERNAL_URL;
@@ -98,7 +100,8 @@ app.post('/generate-password', (req, res) => {
 
 app.post('/generate-jwt', (req, res) => {
   try {
-    const result = handleJWT(req.body.payload);
+    const { payload, secret } = req.body;
+    const result = handleJWT(payload, secret || undefined);
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -107,6 +110,7 @@ app.post('/generate-jwt', (req, res) => {
 
 // Telegram commands
 bot.start(async (ctx) => {
+  await ctx.sendChatAction('typing');
   try {
     await ctx.replyWithPhoto(LOGO_URL, {
       caption:
@@ -130,6 +134,7 @@ bot.start(async (ctx) => {
 });
 
 bot.command('password', async (ctx) => {
+  await ctx.sendChatAction('typing');
   const password = generatePassword(16, {
     upper: true,
     lower: true,
@@ -143,6 +148,7 @@ bot.command('password', async (ctx) => {
 });
 
 bot.command('jwt', async (ctx) => {
+  await ctx.sendChatAction('typing');
   await ctx.replyWithMarkdown(
     '🔐 *JWT Generation*\n\n' +
       'Send claims in format:\n' +
@@ -152,6 +158,7 @@ bot.command('jwt', async (ctx) => {
 
   bot.on('text', async (ctx) => {
     if (ctx.message.text.includes('=')) {
+      await ctx.sendChatAction('typing');
       try {
         const claims = ctx.message.text
           .split(', ')
@@ -160,7 +167,7 @@ bot.command('jwt', async (ctx) => {
             acc[key] = isNaN(value) ? value : Number(value);
             return acc;
           }, {});
-        const token = handleJWT(claims).token;
+        const { token } = handleJWT(claims);
         await ctx.reply(
           `🔐 JWT Token:\n\n<code>${token}</code>`,
           { parse_mode: 'HTML' }
@@ -172,7 +179,8 @@ bot.command('jwt', async (ctx) => {
   });
 });
 
-bot.command('web', (ctx) => {
+bot.command('web', async (ctx) => {
+  await ctx.sendChatAction('typing');
   ctx.replyWithMarkdown(
     '🌐 *Web Interfaces*\n\n' +
       `[Password Generator](${WEB_URL}/?access=${uuidv4()})\n` +
@@ -180,7 +188,8 @@ bot.command('web', (ctx) => {
   );
 });
 
-bot.command('help', (ctx) => {
+bot.command('help', async (ctx) => {
+  await ctx.sendChatAction('typing');
   ctx.replyWithMarkdown(
     '*🤖 Command List*\n\n' +
       '/start - Show welcome message\n' +
